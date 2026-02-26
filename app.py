@@ -163,18 +163,18 @@ div[role="listbox"] span[data-baseweb="tag"] {{
 # データの保存・読み込み
 # ------------------------------------------------------------------------------
 def load_data():
-    # 旧ファイル名(stock_data_v5.json等)が残っていても読み込まないように隔離
+    # セキュリティ強化: 自動読み込みを廃止。
+    # 公開URLで誰かがアクセスした際、Githubに古いファイルが残っていても読み込まないようにするためです。
+    return {}
+
+def load_data_from_file():
+    """手動でファイルを読み込むための関数"""
     if os.path.exists(SAVE_FILE):
         try:
             with open(SAVE_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception:
             return {}
-    
-    # 配布時の安全性チェック: もし旧ファイルが見つかったら警告を表示（読み込みはしない）
-    if os.path.exists("stock_data_v5.json") or os.path.exists("portfolio.json"):
-        st.warning("⚠️ 旧形式のデータファイル（個人設定）が検出されました。プライバシー保護のため読み込みをスキップしました。配布前にGithubからこれらのJSONファイルを削除してください。")
-        
     return {}
 
 def save_data(data):
@@ -363,33 +363,38 @@ def main():
     st.title("👑 マイ株価ダッシュボード Pro")
 
     if 'stock_configs' not in st.session_state:
-        st.session_state.stock_configs = load_data()
+        # 🛡️ プライバシー保護の要: 起動時は常に「0銘柄」から開始
+        # これにより、Githubにデータが残っていても他人の画面には一切表示されません。
+        st.session_state.stock_configs = {}
 
-    # --- サイドバー ---
-    st.sidebar.header("🛡️ 銘柄・表示管理")
+    # --- サイドバー (設定・管理) ---
+    st.sidebar.header("⚙️ システム管理")
     
+    # 【自分専用】パソコン内の保存ファイルを読み込むボタン
+    # このアプリを自分のPCで動かしている時や、オーナーがデータを復元したい時だけ使います。
+    if os.path.exists(SAVE_FILE):
+        if st.sidebar.button("🔄 保存データを同期 (読込)", use_container_width=True, help="サーバー上の最新の保存ファイルを読み込みます"):
+            st.session_state.stock_configs = load_data_from_file()
+            st.success("データを同期しました。")
+            st.rerun()
+
     st.sidebar.divider()
     
     # 銘柄追加
     with st.sidebar.expander("➕ 銘柄を追加", expanded=True):
         st.text_input("証券コード (4桁)", max_chars=4, key="new_ticker_input")
         if st.button("追加実行", use_container_width=True, on_click=add_ticker_callback):
-            pass # ロジックはコールバックへ
+            pass 
 
-    # ポートフォリオ一括削除（簡易版）
-    if st.sidebar.button("🗑️ 全データを初期化", use_container_width=True):
-        if st.sidebar.checkbox("本当に全て削除しますか？"):
-            st.session_state.stock_configs = {}
-            save_data({})
-            st.rerun()
-
-    # JSON保存・読込
+    # 設定の書き出し・読み込み
     st.sidebar.subheader("💾 設定の保存・読込")
     c1, c2 = st.sidebar.columns(2)
     with c1:
+        # 今の銘柄設定をファイルとしてダウンロード
         st.download_button("📤 保存(JSON)", json.dumps(st.session_state.stock_configs, indent=4, ensure_ascii=False), 
                          file_name="portfolio.json", use_container_width=True)
     with c2:
+        # 保存したファイルを読み込ませる（他デバイスへの移行用）
         up = st.file_uploader("設定読込", type="json", label_visibility="collapsed")
         if up:
             try:
@@ -400,7 +405,7 @@ def main():
                 st.error(f"読込エラー: {e}")
 
     # ⚠️ データの初期化 (配布・公開用)
-    if st.sidebar.button("🗑️ データを全削除して初期化", use_container_width=True):
+    if st.sidebar.button("🗑️ 全データを初期化して0件にする", use_container_width=True):
         st.session_state.stock_configs = {}
         save_data({})
         st.success("全ての銘柄を削除しました。")
