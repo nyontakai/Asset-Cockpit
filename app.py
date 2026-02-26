@@ -490,12 +490,14 @@ def main():
             st.subheader("📁 ポートフォリオ一括編集")
             st.info("保有銘柄の「購入単価」と「枚数（株数）」を入力して保存ボタンを押してください。")
             edit_list = []
-            for d in all_data:
+            for tid in ticker_list:
+                info = bulk_meta.get(tid, {})
+                cfg = st.session_state.stock_configs.get(tid, {"buy_price": 0.0, "shares": 100})
                 edit_list.append({
-                    "コード": d['コード'],
-                    "銘柄名": d['銘柄名'],
-                    "保有株数": int(d['保有数']),
-                    "購入単価": float(d['購入単価'])
+                    "コード": tid,
+                    "銘柄名": get_display_name(tid, info),
+                    "保有株数": int(cfg['shares']),
+                    "購入単価": float(cfg['buy_price'])
                 })
         
         if edit_mode and len(edit_list) > 0:
