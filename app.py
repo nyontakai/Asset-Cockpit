@@ -14,6 +14,11 @@ from datetime import datetime
 SAVE_FILE_BASE = "stock_dashboard_user" # ベース名のみ。後ろにIDをつける
 METADATA_FILE = "metadata_db_cache.json"
 
+# 🛡️ 秘密の「マスターキー（合言葉）」
+# 配布する際はここを自分の好きな言葉に変えてください。
+# これを知らない人は、URL（ID）が合っていてもデータを見ることができません。
+MASTER_SECURITY_KEY = "7777" 
+
 def get_save_filename(user_id):
     """ユーザーIDに基づいたファイル名を生成"""
     if not user_id: return None
@@ -368,44 +373,68 @@ def save_portfolio_callback():
 def main():
     st.title("👑 マイ株価ダッシュボード Pro")
 
-    # --- URLパラメータからのID取得 ---
+    # --- URLパラメータからのID・キー取得 ---
     query_params = st.query_params
     url_id = query_params.get("id", "")
+    url_key = query_params.get("key", "") # 秘密の鍵もURLから取得可能に
 
     if 'user_passcode' not in st.session_state:
         st.session_state.user_passcode = url_id
+    if 'user_key' not in st.session_state:
+        st.session_state.user_key = url_key
+
+    # 認証チェック: IDがあり、かつキーがマスターキーと一致する場合のみロード許可
+    is_authenticated = (st.session_state.user_passcode != "" and 
+                        st.session_state.user_key == MASTER_SECURITY_KEY)
 
     if 'stock_configs' not in st.session_state:
-        # IDがある場合は自動ロード、なければ空
-        if st.session_state.user_passcode:
+        if is_authenticated:
             st.session_state.stock_configs = load_data(st.session_state.user_passcode)
         else:
             st.session_state.stock_configs = {}
 
     # --- サイドバー (設定・管理) ---
-    st.sidebar.header("🔑 個人セッション")
+    st.sidebar.header("🔐 二段階認証セッション")
     
-    # マイ・パスコード入力
-    new_id = st.sidebar.text_input("マイ・パスコード (ID)", value=st.session_state.user_passcode, 
-                                 help="自分専用のIDを入力すると、自動でデータが読み込まれます。人に見られない名前を推奨。",
+    # 1. マイ・パスコード入力 (伏せ字)
+    new_id = st.sidebar.text_input("① マイ・パスコード (ID)", value=st.session_state.user_passcode, 
+                                 type="password",
+                                 help="自分専用のIDを入力してください。",
                                  placeholder="例: my_secret_123")
     
-    if new_id != st.session_state.user_passcode:
+    # 2. マスターキー入力 (伏せ字)
+    new_key = st.sidebar.text_input("② マスターキー (合言葉)", value=st.session_state.user_key, 
+                                  type="password",
+                                  help="プログラムに設定された秘密の言葉を入力してください。",
+                                  placeholder="例: ****")
+
+    # 入力に変更があった場合の処理
+    if new_id != st.session_state.user_passcode or new_key != st.session_state.user_key:
         st.session_state.user_passcode = new_id
-        st.session_state.stock_configs = load_data(new_id)
-        # URLパラメータを更新（擬似的にお気に入り用URLを案内するため）
+        st.session_state.user_key = new_key
+        
+        # 再認証してロード
+        if new_id != "" and new_key == MASTER_SECURITY_KEY:
+            st.session_state.stock_configs = load_data(new_id)
+        else:
+            st.session_state.stock_configs = {}
+            
+        # URLパラメータを更新
         st.query_params["id"] = new_id
+        st.query_params["key"] = new_key
         st.rerun()
 
-    if st.session_state.user_passcode:
-        st.sidebar.success(f"ID: {st.session_state.user_passcode} でログイン中")
-        # お気に入りURLの案内
-        base_url = "https://asset-cockpit.streamlit.app/" # あなたの実際のURL
-        share_url = f"{base_url}?id={st.session_state.user_passcode}"
-        st.sidebar.caption("💡 このURLをお気に入り登録すると、次から自動で開きます：")
+    if is_authenticated:
+        st.sidebar.success(f"🔓 認証成功 (ID: {st.session_state.user_passcode})")
+        # お気に入りURLの案内 (キーも含める)
+        base_url = "https://asset-cockpit.streamlit.app/" 
+        share_url = f"{base_url}?id={st.session_state.user_passcode}&key={st.session_state.user_key}"
+        st.sidebar.caption("💡 このURLをお気に入り登録すれば、次から自動で開きます：")
         st.sidebar.code(share_url, language="text")
+    elif st.session_state.user_passcode != "":
+        st.sidebar.error("❌ マスターキーが正しくありません")
     else:
-        st.sidebar.warning("⚠️ パスコード未入力。他人のデータは見えない安全な状態です。")
+        st.sidebar.info("👋 IDとキーを入力して、自分専用のダッシュボードを開始してください。")
 
     st.sidebar.divider()
     
