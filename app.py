@@ -11,8 +11,15 @@ from datetime import datetime
 # ------------------------------------------------------------------------------
 # 設定 & マッピング
 # ------------------------------------------------------------------------------
-SAVE_FILE = "stock_dashboard_user_data.json" # ファイル名を刷新し、Github上の旧データを読み込まないように変更
+SAVE_FILE_BASE = "stock_dashboard_user" # ベース名のみ。後ろにIDをつける
 METADATA_FILE = "metadata_db_cache.json"
+
+def get_save_filename(user_id):
+    """ユーザーIDに基づいたファイル名を生成"""
+    if not user_id: return None
+    # 安全なファイル名にするため、英数字以外を除去
+    safe_id = re.sub(r'[^a-zA-Z0-9]', '_', user_id)
+    return f"{SAVE_FILE_BASE}_{safe_id}.json"
 
 NAME_MAPPING = {
     "7203.T": "トヨタ自動車",
@@ -162,25 +169,23 @@ div[role="listbox"] span[data-baseweb="tag"] {{
 # ------------------------------------------------------------------------------
 # データの保存・読み込み
 # ------------------------------------------------------------------------------
-def load_data():
-    # セキュリティ強化: 自動読み込みを廃止。
-    # 公開URLで誰かがアクセスした際、Githubに古いファイルが残っていても読み込まないようにするためです。
-    return {}
-
-def load_data_from_file():
-    """手動でファイルを読み込むための関数"""
-    if os.path.exists(SAVE_FILE):
+def load_data(user_id=None):
+    if not user_id: return {}
+    filename = get_save_filename(user_id)
+    if filename and os.path.exists(filename):
         try:
-            with open(SAVE_FILE, 'r', encoding='utf-8') as f:
+            with open(filename, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception:
             return {}
     return {}
 
-def save_data(data):
+def save_data(data, user_id=None):
+    if not user_id: return
+    filename = get_save_filename(user_id)
     try:
-        with open(SAVE_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
     except Exception as e:
         st.error(f"保存エラー: {e}")
 
@@ -342,11 +347,12 @@ def get_display_name(tid, info):
 # ------------------------------------------------------------------------------
 def add_ticker_callback():
     code = st.session_state.get("new_ticker_input", "")
+    user_id = st.session_state.get("user_passcode", "")
     if code.isdigit() and len(code) == 4:
         full_code = f"{code}.T"
         if full_code not in st.session_state.stock_configs:
             st.session_state.stock_configs[full_code] = {"buy_price": 0.0, "shares": 100}
-            save_data(st.session_state.stock_configs)
+            save_data(st.session_state.stock_configs, user_id)
             st.session_state["new_ticker_input"] = "" # 入力欄をクリア
             # rerunはコールバック終了後に自動で行われる
 
@@ -362,52 +368,74 @@ def save_portfolio_callback():
 def main():
     st.title("👑 マイ株価ダッシュボード Pro")
 
+    # --- URLパラメータからのID取得 ---
+    query_params = st.query_params
+    url_id = query_params.get("id", "")
+
+    if 'user_passcode' not in st.session_state:
+        st.session_state.user_passcode = url_id
+
     if 'stock_configs' not in st.session_state:
-        # 🛡️ プライバシー保護の要: 起動時は常に「0銘柄」から開始
-        # これにより、Githubにデータが残っていても他人の画面には一切表示されません。
-        st.session_state.stock_configs = {}
+        # IDがある場合は自動ロード、なければ空
+        if st.session_state.user_passcode:
+            st.session_state.stock_configs = load_data(st.session_state.user_passcode)
+        else:
+            st.session_state.stock_configs = {}
 
     # --- サイドバー (設定・管理) ---
-    st.sidebar.header("⚙️ システム管理")
+    st.sidebar.header("🔑 個人セッション")
     
-    # 【自分専用】パソコン内の保存ファイルを読み込むボタン
-    # このアプリを自分のPCで動かしている時や、オーナーがデータを復元したい時だけ使います。
-    if os.path.exists(SAVE_FILE):
-        if st.sidebar.button("🔄 保存データを同期 (読込)", use_container_width=True, help="サーバー上の最新の保存ファイルを読み込みます"):
-            st.session_state.stock_configs = load_data_from_file()
-            st.success("データを同期しました。")
-            st.rerun()
+    # マイ・パスコード入力
+    new_id = st.sidebar.text_input("マイ・パスコード (ID)", value=st.session_state.user_passcode, 
+                                 help="自分専用のIDを入力すると、自動でデータが読み込まれます。人に見られない名前を推奨。",
+                                 placeholder="例: my_secret_123")
+    
+    if new_id != st.session_state.user_passcode:
+        st.session_state.user_passcode = new_id
+        st.session_state.stock_configs = load_data(new_id)
+        # URLパラメータを更新（擬似的にお気に入り用URLを案内するため）
+        st.query_params["id"] = new_id
+        st.rerun()
+
+    if st.session_state.user_passcode:
+        st.sidebar.success(f"ID: {st.session_state.user_passcode} でログイン中")
+        # お気に入りURLの案内
+        base_url = "https://asset-cockpit.streamlit.app/" # あなたの実際のURL
+        share_url = f"{base_url}?id={st.session_state.user_passcode}"
+        st.sidebar.caption("💡 このURLをお気に入り登録すると、次から自動で開きます：")
+        st.sidebar.code(share_url, language="text")
+    else:
+        st.sidebar.warning("⚠️ パスコード未入力。他人のデータは見えない安全な状態です。")
 
     st.sidebar.divider()
     
     # 銘柄追加
     with st.sidebar.expander("➕ 銘柄を追加", expanded=True):
         st.text_input("証券コード (4桁)", max_chars=4, key="new_ticker_input")
-        if st.button("追加実行", use_container_width=True, on_click=add_ticker_callback):
-            pass 
+        disabled = not st.session_state.user_passcode
+        if st.button("追加実行", use_container_width=True, on_click=add_ticker_callback, disabled=disabled):
+            if disabled: st.error("パスコードを入力してください")
 
     # 設定の書き出し・読み込み
     st.sidebar.subheader("💾 設定の保存・読込")
     c1, c2 = st.sidebar.columns(2)
     with c1:
-        # 今の銘柄設定をファイルとしてダウンロード
         st.download_button("📤 保存(JSON)", json.dumps(st.session_state.stock_configs, indent=4, ensure_ascii=False), 
                          file_name="portfolio.json", use_container_width=True)
     with c2:
-        # 保存したファイルを読み込ませる（他デバイスへの移行用）
         up = st.file_uploader("設定読込", type="json", label_visibility="collapsed")
         if up:
             try:
                 st.session_state.stock_configs = json.load(up)
-                save_data(st.session_state.stock_configs)
+                save_data(st.session_state.stock_configs, st.session_state.user_passcode)
                 st.rerun()
             except Exception as e:
                 st.error(f"読込エラー: {e}")
 
     # ⚠️ データの初期化 (配布・公開用)
-    if st.sidebar.button("🗑️ 全データを初期化して0件にする", use_container_width=True):
+    if st.sidebar.button("🗑️ データを全削除して0件にする", use_container_width=True):
         st.session_state.stock_configs = {}
-        save_data({})
+        save_data({}, st.session_state.user_passcode)
         st.success("全ての銘柄を削除しました。")
         st.rerun()
 
@@ -428,8 +456,9 @@ def main():
         sel = st.sidebar.multiselect("登録済み銘柄 (×で削除)", options.keys(), default=options.keys())
         if len(sel) < len(current_tickers):
             if st.sidebar.button("削除を確定", type="primary", use_container_width=True):
+                user_id = st.session_state.get("user_passcode", "")
                 st.session_state.stock_configs = {options[label]: st.session_state.stock_configs[options[label]] for label in sel}
-                save_data(st.session_state.stock_configs)
+                save_data(st.session_state.stock_configs, user_id)
                 st.rerun()
 
     st.sidebar.divider()
@@ -579,7 +608,8 @@ def main():
                     try:
                         new_configs = {row['コード']: {"buy_price": float(row['購入単価']), "shares": int(row['保有株数'])} for _, row in edited_df.iterrows()}
                         st.session_state.stock_configs = new_configs
-                        save_data(new_configs)
+                        user_id = st.session_state.get("user_passcode", "")
+                        save_data(new_configs, user_id)
                         success = True
                     except Exception as ex:
                         st.error(f"❌ 保存中にエラーが発生しました: {ex}")
