@@ -14,70 +14,17 @@ SAVE_FILE = "stock_data_v5.json"
 METADATA_FILE = "metadata_db.json"
 
 NAME_MAPPING = {
-    "4661.T": "オリエンタルランド",
-    "8593.T": "三菱HCキャピタル",
-    "9433.T": "KDDI",
+    # 代表的な銘柄のみを残し、ユーザー独自のリストを隠蔽して汎用性を高める
     "7203.T": "トヨタ自動車",
     "6758.T": "ソニーグループ",
-    "9984.T": "ソフトバンクグループ",
+    "9433.T": "KDDI",
     "8306.T": "三菱UFJフィナンシャルG",
-    "8316.T": "三井住友FG",
-    "8411.T": "みずほFG",
-    "4063.T": "信越化学工業",
-    "8031.T": "三井物産",
-    "8766.T": "東京海上HD",
-    "2914.T": "日本たばこ産業",
-    "6098.T": "リクルートHD",
-    "4502.T": "武田薬品工業",
-    "6954.T": "ファナック",
+    "9984.T": "ソフトバンクグループ",
     "7974.T": "任天堂",
-    "9022.T": "JR東海",
-    "6367.T": "ダイキン工業",
-    "4503.T": "アステラス製薬",
-    "9513.T": "電源開発 (J-POWER)",
+    "4661.T": "オリエンタルランド",
     "8058.T": "三菱商事",
     "8001.T": "伊藤忠商事",
     "9432.T": "日本電信電話",
-    "7267.T": "本田技研工業",
-    "6501.T": "日立製作所",
-    "6902.T": "デンソー",
-    "6965.T": "浜松ホトニクス",
-    "6702.T": "富士通",
-    "6752.T": "パナソニックHD",
-    "4568.T": "第一三共",
-    "7201.T": "日産自動車",
-    "6981.T": "村田製作所",
-    "7751.T": "キヤノン",
-    "8035.T": "東京エレクトロン",
-    "2337.T": "いちご",
-    "2502.T": "アサヒGHD",
-    "2802.T": "味の素",
-    "3382.T": "セブン&アイHD",
-    "3402.T": "東レ",
-    "3407.T": "旭化成",
-    "4452.T": "花王",
-    "4519.T": "中外製薬",
-    "4901.T": "富士フイルムHD",
-    "5108.T": "ブリヂストン",
-    "6361.T": "荏原製作所",
-    "6479.T": "ミネベアミツミ",
-    "6503.T": "三菱電機",
-    "6723.T": "ルネサスエレクトロニクス",
-    "6753.T": "シャープ",
-    "6861.T": "キーエンス",
-    "6971.T": "京セラ",
-    "7011.T": "三菱重工業",
-    "1332.T": "ニッスイ",
-    "1333.T": "マルハニチロ",
-    "1925.T": "大和ハウス",
-    "1928.T": "積水ハウス",
-    "4664.T": "日本リライアンス",
-    "9441.T": "ベルパーク",
-    "6134.T": "富士製砥",
-    "4661.T": "オリエンタルランド",
-    "8306.T": "三菱UFJフィナンシャルG",
-    "9513.T": "電源開発",
-    "2337.T": "いちご",
 }
 
 SECTOR_MAPPING = {
@@ -100,7 +47,7 @@ COLOR_DANGER = "#ff4b4b"
 COLOR_PRIMARY = "#00d4ff"
 
 st.set_page_config(
-    page_title="株価ダッシュボード Pro v8",
+    page_title="👑 マイ株価ダッシュボード Pro v9.2",
     page_icon="👑",
     layout="wide"
 )
@@ -322,10 +269,14 @@ def fetch_dividend_history(tid):
         return []
 
 def get_display_name(tid, info):
+    # 1. ユーザー定義リスト (NAME_MAPPING) をチェック
     if tid in NAME_MAPPING: return NAME_MAPPING[tid]
+    
+    # 2. yfinance の info から名称を取得 (日本語名、なければ英語名)
+    # yfinance の info には 'longName' や 'shortName' が含まれる
     raw_name = info.get("longName") or info.get("shortName") or tid
     
-    # 除去キーワードの拡充 (特に日本株の英語表記対策)
+    # 3. 英語名称から不要なキーワードを徹底除去（汎用性アップ）
     removals = [
         "Corporation", "Corp", "Company", "Co., Ltd", "Co.,Ltd", "Limited", "Ltd", 
         "Holdings", "Group", "K.K.", "Inc", "Incorporated", "International", "Solutions",
@@ -335,10 +286,9 @@ def get_display_name(tid, info):
     ]
     
     cleaned = raw_name
+    import re
     for r in removals:
-        # 大文字小文字を区別せず、単語境界やピリオドの有無を考慮して置換
-        import re
-        # ピリオドの有無に関わらずマッチさせるためのパターン
+        # 大文字小文字を区別せず、単語境界やピリオドを考慮して置換
         pattern = re.escape(r).replace(r"\.", r"\.?")
         cleaned = re.sub(r"(?i)\b" + pattern + r"\b", "", cleaned).strip()
     
@@ -346,6 +296,7 @@ def get_display_name(tid, info):
     if tid.endswith(".T"):
         cleaned = cleaned.replace("&", "").replace(",", "").strip()
         
+    # それでも空ならティッカーを返す
     return cleaned if cleaned else tid
 
 # ------------------------------------------------------------------------------
@@ -432,169 +383,174 @@ def main():
     # --- データ計算 ---
     ticker_list = list(st.session_state.stock_configs.keys())
     if not ticker_list:
-        st.info("銘柄を登録してください。")
-        return
+        st.info("左側のサイドバーから証券コード（4桁）を入力して銘柄を追加してください。")
+        st.stop()
 
-    all_data = []
-    bulk_res = fetch_bulk_data(ticker_list)
-    bulk_meta = get_bulk_metadata(ticker_list) # info取得をバルク管理へ移行
+    try:
+        all_data = []
+        bulk_res = fetch_bulk_data(ticker_list)
+        bulk_meta = get_bulk_metadata(ticker_list)
     
-    total_pl = 0
-    total_div = 0
-    total_valuation = 0
-    sector_valuation = {}
-    monthly_dividends = {m: 0 for m in range(1, 13)}
+        total_pl = 0
+        total_div = 0
+        total_valuation = 0
+        sector_valuation = {}
+        monthly_dividends = {m: 0 for m in range(1, 13)}
 
-    for tid in ticker_list:
-        price_data = bulk_res.get(tid)
-        if not price_data: continue
-        
-        info = bulk_meta.get(tid, {})
-        cfg = st.session_state.stock_configs.get(tid, {"buy_price": 0.0, "shares": 100})
-        
-        # 基本情報
-        name = get_display_name(tid, info)
-        sec_raw = info.get("sector")
-        sec = SECTOR_MAPPING.get(sec_raw, sec_raw or "その他業種")
-        shares = cfg['shares']
-        buy_p = cfg['buy_price']
-        valuation = price_data['price'] * shares
-        
-        # 配当計算
-        y_val = info.get("dividendYield", 0)
-        yield_pct = y_val if y_val > 0.5 else y_val * 100
-        one_share_div = (yield_pct / 100 * price_data['price'])
-        div_sum = one_share_div * shares
-        
-        # 月別配当加算
-        pay_months = fetch_dividend_history(tid)
-        if pay_months and div_sum > 0:
-            div_per_month = div_sum / len(pay_months)
-            for m in pay_months: monthly_dividends[m] += div_per_month
-        
-        # 損益
-        pl = (price_data['price'] - buy_p) * shares if buy_p > 0 else 0
-        pl_pct = ((price_data['price'] - buy_p) / buy_p * 100) if buy_p > 0 else 0
-        yoc = (one_share_div / buy_p * 100) if buy_p > 0 else 0
-        
-        total_pl += pl
-        total_div += div_sum
-        total_valuation += valuation
-        sector_valuation[sec] = sector_valuation.get(sec, 0) + valuation
-        
-        all_data.append({
-            "コード": tid, "銘柄名": name, "業種": sec, "現在値": price_data['price'],
-            "前日比_率": price_data['change_pct'], 
-            "PER": f"{float(info.get('trailingPE',0)):.1f}" if info.get('trailingPE') else "データなし",
-            "配当利回り": yield_pct, "保有数": shares, "購入単価": buy_p, "含み損益": pl,
-            "損益率": pl_pct, "配当合計": div_sum, "YOC": yoc, "時価": valuation
-        })
-
-    # --- トップセクション (2カラム) ---
-    col_metrics, col_pie = st.columns([1, 1])
-    
-    with col_metrics:
-        pl_class = "metric-positive" if total_pl >= 0 else "metric-negative"
-        pl_arrow = "+" if total_pl >= 0 else ""
-        avg_yield = (total_div / total_valuation * 100) if total_valuation > 0 else 0
-        
-        st.markdown(f"""
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-            <div class="metric-card {pl_class}" style="grid-column: span 2;">
-                <div class="metric-label">合計含み損益</div>
-                <div class="metric-value" style="color:{COLOR_SUCCESS if total_pl>=0 else COLOR_DANGER};">¥{total_pl:,.0f}</div>
-                <div class="metric-delta">{pl_arrow}{total_pl/total_valuation*100:+.2f}% (時価: ¥{total_valuation:,.0f})</div>
-            </div>
-            <div class="metric-card">
-                <div class="metric-label">年間予想配当合計</div>
-                <div class="metric-value" style="color:{COLOR_PRIMARY};">¥{total_div:,.0f}</div>
-            </div>
-            <div class="metric-card">
-                <div class="metric-label">平均配当利回り</div>
-                <div class="metric-value">{avg_yield:.2f}%</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col_pie:
-        # 業種別グラフ
-        fig_pie = px.pie(values=list(sector_valuation.values()), names=list(sector_valuation.keys()), 
-                        hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
-        fig_pie.update_layout(margin=dict(t=30, b=0, l=0, r=0), height=250, paper_bgcolor='rgba(0,0,0,0)', font_color='white')
-        st.plotly_chart(fig_pie, use_container_width=True)
-
-    # --- 月別配当金受取予想 ---
-    st.subheader("🗓️ 月別配当金受取予想")
-    months_jp = [f"{i}月" for i in range(1, 13)]
-    fig_bar = go.Figure(data=[go.Bar(x=months_jp, y=list(monthly_dividends.values()), marker_color=COLOR_PRIMARY)])
-    fig_bar.update_layout(height=300, margin=dict(t=20, b=20, l=20, r=20), paper_bgcolor='rgba(0,0,0,0)', 
-                         plot_bgcolor='rgba(0,0,0,0)', font_color='white', yaxis=dict(gridcolor='rgba(255,255,255,0.1)'))
-    st.plotly_chart(fig_bar, use_container_width=True)
-
-    # --- メインコンテンツ ---
-    st.divider()
-
-    if edit_mode:
-        st.subheader("📁 ポートフォリオ一括編集")
-        st.info("保有銘柄の「購入単価」と「枚数（株数）」を入力して保存ボタンを押してください。")
-        edit_list = []
-        for d in all_data:
-            edit_list.append({
-                "コード": d['コード'],
-                "銘柄名": d['銘柄名'],
-                "保有株数": int(d['保有数']),
-                "購入単価": float(d['購入単価'])
+        for tid in ticker_list:
+            price_data = bulk_res.get(tid)
+            if not price_data: continue
+            
+            info = bulk_meta.get(tid, {})
+            cfg = st.session_state.stock_configs.get(tid, {"buy_price": 0.0, "shares": 100})
+            
+            # 基本情報
+            name = get_display_name(tid, info)
+            sec_raw = info.get("sector")
+            sec = SECTOR_MAPPING.get(sec_raw, sec_raw or "その他業種")
+            shares = cfg['shares']
+            buy_p = cfg['buy_price']
+            valuation = price_data['price'] * shares
+            
+            # 配当計算
+            y_val = info.get("dividendYield", 0)
+            yield_pct = y_val if y_val > 0.5 else y_val * 100
+            one_share_div = (yield_pct / 100 * price_data['price'])
+            div_sum = one_share_div * shares
+            
+            # 月別配当加算 (ゼロ除算ガード)
+            pay_months = fetch_dividend_history(tid)
+            if pay_months and len(pay_months) > 0 and div_sum > 0:
+                div_per_month = div_sum / len(pay_months)
+                for m in pay_months: monthly_dividends[m] += div_per_month
+            
+            # 損益
+            pl = (price_data['price'] - buy_p) * shares if buy_p > 0 else 0
+            pl_pct = ((price_data['price'] - buy_p) / buy_p * 100) if buy_p > 0 else 0
+            yoc = (one_share_div / buy_p * 100) if buy_p > 0 else 0
+            
+            total_pl += pl
+            total_div += div_sum
+            total_valuation += valuation
+            sector_valuation[sec] = sector_valuation.get(sec, 0) + valuation
+            
+            all_data.append({
+                "コード": tid, "銘柄名": name, "業種": sec, "現在値": price_data['price'],
+                "前日比_率": price_data['change_pct'], 
+                "PER": f"{float(info.get('trailingPE',0)):.1f}" if info.get('trailingPE') else "データなし",
+                "配当利回り": yield_pct, "保有数": shares, "購入単価": buy_p, "含み損益": pl,
+                "損益率": pl_pct, "配当合計": div_sum, "YOC": yoc, "時価": valuation
             })
-        
-        edited_df = st.data_editor(pd.DataFrame(edit_list), use_container_width=True, hide_index=True)
-        if st.button("✅ 編集内容を保存", type="primary", use_container_width=True):
-            new_configs = {row['コード']: {"buy_price": row['購入単価'], "shares": row['保有株数']} for _, row in edited_df.iterrows()}
-            st.session_state.stock_configs = new_configs
-            save_data(new_configs)
-            st.success("設定を保存しました！")
-            st.rerun()
-        return
 
-    if display_mode == "リスト形式 (表)":
-        df_list = pd.DataFrame([{
-            "銘柄名": d['銘柄名'], "コード": d['コード'], "業種": d['業種'], "現在値": f"¥{d['現在値']:,.1f}",
-            "保有数": f"{d['保有数']:,.0f}", "含み損益": f"¥{d['含み損益']:,.0f}", "損益率": f"{d['損益率']:+.2f}%",
-            "配当利回り": f"{d['配当利回り']:.2f}%", "取得利回り(YOC)": f"{d['YOC']:.2f}%"
-        } for d in all_data])
-        st.dataframe(df_list, use_container_width=True, hide_index=True)
-    else:
-        # カード形式 (セクター別にグループ化)
-        sector_data = {}
-        for d in all_data:
-            s = d['業種']
-            if s not in sector_data: sector_data[s] = []
-            sector_data[s].append(d)
+        if total_valuation > 0:
+            col_metrics, col_pie = st.columns([1, 1])
         
-        # セクター別に見出しとグリッドを表示
-        for sector, items in sector_data.items():
-            with st.expander(f"📌 {sector} ({len(items)}銘柄)", expanded=True):
-                for i in range(0, len(items), 3):
-                    cols = st.columns(3)
-                    row_items = items[i : i+3]
-                    for j, item in enumerate(row_items):
-                        with cols[j]:
-                            st.markdown(f"**{item['銘柄名']}** ({item['コード']})")
-                            st.metric("現在値", f"¥{item['現在値']:,.1f}", f"{item['前日比_率']:+.2f}%")
-                            
-                            y_style = "color:#ffaa00; font-weight:bold;" if item['配当利回り'] >= 4.0 else ""
-                            st.markdown(f"""
-                            <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:#ccc; margin: 4px 0;">
-                                <span>PER: {item['PER']}</span>
-                                <span style="{y_style}">利回り: {item['配当利回り']:.2f}%</span>
-                            </div>
-                            """, unsafe_allow_html=True)
-                            
-                            if item['購入単価'] > 0:
-                                pl_color = COLOR_SUCCESS if item['含み損益'] >= 0 else COLOR_DANGER
-                                st.markdown(f"<div style='color:{pl_color}; font-size:1rem; font-weight:bold;'>¥{item['含み損益']:,.0f} ({item['損益率']:+,.2f}%)</div>", unsafe_allow_html=True)
-                                st.caption(f"YOC: {item['YOC']:.2f}% | {item['保有数']:,.0f}株")
-                    if i + 3 < len(items):
-                        st.divider()
+            with col_metrics:
+                pl_class = "metric-positive" if total_pl >= 0 else "metric-negative"
+                pl_arrow = "+" if total_pl >= 0 else ""
+                avg_yield = (total_div / total_valuation * 100)
+                pl_pct_total = (total_pl / total_valuation * 100)
+                
+                st.markdown(f"""
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div class="metric-card {pl_class}" style="grid-column: span 2;">
+                        <div class="metric-label">合計含み損益</div>
+                        <div class="metric-value" style="color:{COLOR_SUCCESS if total_pl>=0 else COLOR_DANGER};">¥{total_pl:,.0f}</div>
+                        <div class="metric-delta">{pl_arrow}{pl_pct_total:+.2f}% (時価: ¥{total_valuation:,.0f})</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">年間予想配当合計</div>
+                        <div class="metric-value" style="color:{COLOR_PRIMARY};">¥{total_div:,.0f}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">平均配当利回り</div>
+                        <div class="metric-value">{avg_yield:.2f}%</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+    
+            with col_pie:
+                # 業種別グラフ
+                fig_pie = px.pie(values=list(sector_valuation.values()), names=list(sector_valuation.keys()), 
+                                hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
+                fig_pie.update_layout(margin=dict(t=30, b=0, l=0, r=0), height=250, paper_bgcolor='rgba(0,0,0,0)', font_color='white')
+                st.plotly_chart(fig_pie, use_container_width=True)
+        else:
+            st.warning("📊 表示する資産データがありません。証券コードを追加するか、購入単価を入力してください。")
+
+        # --- 月別配当金受取予想 ---
+        st.subheader("🗓️ 月別配当金受取予想")
+        months_jp = [f"{i}月" for i in range(1, 13)]
+        fig_bar = go.Figure(data=[go.Bar(x=months_jp, y=list(monthly_dividends.values()), marker_color=COLOR_PRIMARY)])
+        fig_bar.update_layout(height=300, margin=dict(t=20, b=20, l=20, r=20), paper_bgcolor='rgba(0,0,0,0)', 
+                             plot_bgcolor='rgba(0,0,0,0)', font_color='white', yaxis=dict(gridcolor='rgba(255,255,255,0.1)'))
+        st.plotly_chart(fig_bar, use_container_width=True)
+
+        # --- メインコンテンツ ---
+        st.divider()
+
+        if edit_mode:
+            st.subheader("📁 ポートフォリオ一括編集")
+            st.info("保有銘柄の「購入単価」と「枚数（株数）」を入力して保存ボタンを押してください。")
+            edit_list = []
+            for d in all_data:
+                edit_list.append({
+                    "コード": d['コード'],
+                    "銘柄名": d['銘柄名'],
+                    "保有株数": int(d['保有数']),
+                    "購入単価": float(d['購入単価'])
+                })
+        
+        if edit_mode and len(edit_list) > 0:
+            edited_df = st.data_editor(pd.DataFrame(edit_list), use_container_width=True, hide_index=True)
+            if st.button("✅ 編集内容を保存", type="primary", use_container_width=True):
+                new_configs = {row['コード']: {"buy_price": float(row['購入単価']), "shares": int(row['保有株数'])} for _, row in edited_df.iterrows()}
+                st.session_state.stock_configs = new_configs
+                save_data(new_configs)
+                st.success("ポートフォリオを更新しました！")
+                st.rerun()
+        elif edit_mode:
+            st.warning("📭 銘柄が登録されていません。サイドバーから銘柄を追加してください。")
+        else:
+            # カード形式 (セクター別にグループ化)
+            sector_data = {}
+            for d in all_data:
+                s = d['業種']
+                if s not in sector_data: sector_data[s] = []
+                sector_data[s].append(d)
+            
+            # セクター別に見出しとグリッドを表示
+            for sector, items in sector_data.items():
+                with st.expander(f"📌 {sector} ({len(items)}銘柄)", expanded=True):
+                    for i in range(0, len(items), 3):
+                        cols = st.columns(3)
+                        row_items = items[i : i+3]
+                        for j, item in enumerate(row_items):
+                            with cols[j]:
+                                st.markdown(f"**{item['銘柄名']}** ({item['コード']})")
+                                st.metric("現在値", f"¥{item['現在値']:,.1f}", f"{item['前日比_率']:+.2f}%")
+                                
+                                y_style = "color:#ffaa00; font-weight:bold;" if item['配当利回り'] >= 4.0 else ""
+                                st.markdown(f"""
+                                <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:#ccc; margin: 4px 0;">
+                                    <span>PER: {item['PER']}</span>
+                                    <span style="{y_style}">利回り: {item['配当利回り']:.2f}%</span>
+                                </div>
+                                """, unsafe_allow_html=True)
+                                
+                                if item['購入単価'] > 0:
+                                    pl_color = COLOR_SUCCESS if item['含み損益'] >= 0 else COLOR_DANGER
+                                    st.markdown(f"<div style='color:{pl_color}; font-size:1rem; font-weight:bold;'>¥{item['含み損益']:,.0f} ({item['損益率']:+,.2f}%)</div>", unsafe_allow_html=True)
+                                    st.caption(f"YOC: {item['YOC']:.2f}% | {item['保有数']:,.0f}株")
+                        if i + 3 < len(items):
+                            st.divider()
+
+    except Exception as e:
+        st.error(f"データの計算中にエラーが発生しました。時間を置いて再度お試しいただくか、キャッシュをクリアしてください。")
+        st.caption(f"エラー詳細: {e}")
+        if st.button("キャッシュをクリアして再試行"):
+            st.cache_data.clear()
+            st.rerun()
 
 if __name__ == "__main__":
     main()
