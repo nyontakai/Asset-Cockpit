@@ -11,8 +11,8 @@ from datetime import datetime
 # ------------------------------------------------------------------------------
 # 設定 & マッピング
 # ------------------------------------------------------------------------------
-SAVE_FILE = "stock_data_v5.json"
-METADATA_FILE = "metadata_db.json"
+SAVE_FILE = "stock_dashboard_user_data.json" # ファイル名を刷新し、Github上の旧データを読み込まないように変更
+METADATA_FILE = "metadata_db_cache.json"
 
 NAME_MAPPING = {
     "7203.T": "トヨタ自動車",
@@ -163,12 +163,18 @@ div[role="listbox"] span[data-baseweb="tag"] {{
 # データの保存・読み込み
 # ------------------------------------------------------------------------------
 def load_data():
+    # 旧ファイル名(stock_data_v5.json等)が残っていても読み込まないように隔離
     if os.path.exists(SAVE_FILE):
         try:
             with open(SAVE_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception:
             return {}
+    
+    # 配布時の安全性チェック: もし旧ファイルが見つかったら警告を表示（読み込みはしない）
+    if os.path.exists("stock_data_v5.json") or os.path.exists("portfolio.json"):
+        st.warning("⚠️ 旧形式のデータファイル（個人設定）が検出されました。プライバシー保護のため読み込みをスキップしました。配布前にGithubからこれらのJSONファイルを削除してください。")
+        
     return {}
 
 def save_data(data):
