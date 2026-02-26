@@ -439,9 +439,9 @@ def main():
                 "損益率": pl_pct, "配当合計": div_sum, "YOC": yoc, "時価": valuation
             })
 
+        # --- トップセクション (2カラム) ---
         if total_valuation > 0:
             col_metrics, col_pie = st.columns([1, 1])
-        
             with col_metrics:
                 pl_class = "metric-positive" if total_pl >= 0 else "metric-negative"
                 pl_arrow = "+" if total_pl >= 0 else ""
@@ -467,13 +467,13 @@ def main():
                 """, unsafe_allow_html=True)
     
             with col_pie:
-                # 業種別グラフ
                 fig_pie = px.pie(values=list(sector_valuation.values()), names=list(sector_valuation.keys()), 
                                 hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
                 fig_pie.update_layout(margin=dict(t=30, b=0, l=0, r=0), height=250, paper_bgcolor='rgba(0,0,0,0)', font_color='white')
                 st.plotly_chart(fig_pie, use_container_width=True)
         else:
-            st.warning("📊 表示する資産データがありません。証券コードを追加するか、購入単価を入力してください。")
+            # 評価額が0でも銘柄があるなら案内を表示
+            st.info("� 銘柄が追加されました！「一括編集モード」から購入単価を入力すると、損益計算が開始されます。")
 
         # --- 月別配当金受取予想 ---
         st.subheader("🗓️ 月別配当金受取予想")
