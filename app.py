@@ -489,6 +489,7 @@ def main():
         if edit_mode:
             st.subheader("📁 ポートフォリオ一括編集")
             st.info("保有銘柄の「購入単価」と「枚数（株数）」を入力して保存ボタンを押してください。")
+            
             edit_list = []
             for tid in ticker_list:
                 info = bulk_meta.get(tid, {})
@@ -499,31 +500,50 @@ def main():
                     "保有株数": int(cfg['shares']),
                     "購入単価": float(cfg['buy_price'])
                 })
-        
-        if edit_mode and len(edit_list) > 0:
-            edited_df = st.data_editor(pd.DataFrame(edit_list), use_container_width=True, hide_index=True)
-            if st.button("✅ 編集内容を保存", type="primary", use_container_width=True):
-                new_configs = {row['コード']: {"buy_price": float(row['購入単価']), "shares": int(row['保有株数'])} for _, row in edited_df.iterrows()}
-                st.session_state.stock_configs = new_configs
-                save_data(new_configs)
-                st.success("ポートフォリオを更新しました！")
-                st.rerun()
-        elif edit_mode:
-            st.warning("📭 銘柄が登録されていません。サイドバーから銘柄を追加してください。")
+            
+            if edit_list:
+                # keyを追加してStreamlitの再レンダリング時でも状態を保持
+                edited_df = st.data_editor(
+                    pd.DataFrame(edit_list), 
+                    use_container_width=True, 
+                    hide_index=True,
+                    key="portfolio_editor_v96"
+                )
+                
+                if st.button("✅ 編集内容を保存", type="primary", use_container_width=True):
+                    try:
+                        # 編集後のデータを辞書形式に変換
+                        new_configs = {}
+                        for _, row in edited_df.iterrows():
+                            new_configs[row['コード']] = {
+                                "buy_price": float(row['購入単価']),
+                                "shares": int(row['保有株数'])
+                            }
+                        
+                        # セッション状態とファイルの両方を更新
+                        st.session_state.stock_configs = new_configs
+                        save_data(new_configs)
+                        
+                        st.success("✅ ポートフォリオを更新しました！")
+                        st.rerun()
+                    except Exception as ex:
+                        st.error(f"❌ 保存中にエラーが発生しました: {ex}")
+            else:
+                st.warning("📭 銘柄が登録されていません。サイドバーから銘柄を追加してください。")
         else:
-            # カード形式 (セクター別にグループ化)
+            # --- 通常表示 (セクター別カード) ---
             sector_data = {}
             for d in all_data:
                 s = d['業種']
                 if s not in sector_data: sector_data[s] = []
                 sector_data[s].append(d)
             
-            # セクター別に見出しとグリッドを表示
             for sector, items in sector_data.items():
                 with st.expander(f"📌 {sector} ({len(items)}銘柄)", expanded=True):
-                    for i in range(0, len(items), 3):
-                        cols = st.columns(3)
-                        row_items = items[i : i+3]
+                    cols_count = 3
+                    for i in range(0, len(items), cols_count):
+                        cols = st.columns(cols_count)
+                        row_items = items[i : i + cols_count]
                         for j, item in enumerate(row_items):
                             with cols[j]:
                                 st.markdown(f"**{item['銘柄名']}** ({item['コード']})")
@@ -541,7 +561,7 @@ def main():
                                     pl_color = COLOR_SUCCESS if item['含み損益'] >= 0 else COLOR_DANGER
                                     st.markdown(f"<div style='color:{pl_color}; font-size:1rem; font-weight:bold;'>¥{item['含み損益']:,.0f} ({item['損益率']:+,.2f}%)</div>", unsafe_allow_html=True)
                                     st.caption(f"YOC: {item['YOC']:.2f}% | {item['保有数']:,.0f}株")
-                        if i + 3 < len(items):
+                        if i + cols_count < len(items):
                             st.divider()
 
     except Exception as e:
