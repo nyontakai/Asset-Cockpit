@@ -502,32 +502,24 @@ def main():
                 })
             
             if edit_list:
-                # keyを追加してStreamlitの再レンダリング時でも状態を保持
-                edited_df = st.data_editor(
-                    pd.DataFrame(edit_list), 
-                    use_container_width=True, 
-                    hide_index=True,
-                    key="portfolio_editor_v96"
-                )
-                
-                if st.button("✅ 編集内容を保存", type="primary", use_container_width=True):
-                    try:
-                        # 編集後のデータを辞書形式に変換
-                        new_configs = {}
-                        for _, row in edited_df.iterrows():
-                            new_configs[row['コード']] = {
-                                "buy_price": float(row['購入単価']),
-                                "shares": int(row['保有株数'])
-                            }
-                        
-                        # セッション状態とファイルの両方を更新
-                        st.session_state.stock_configs = new_configs
-                        save_data(new_configs)
-                        
-                        st.success("✅ ポートフォリオを更新しました！")
-                        st.rerun()
-                    except Exception as ex:
-                        st.error(f"❌ 保存中にエラーが発生しました: {ex}")
+                # フォームを使用して保存ボタンの動作を確実にする
+                with st.form("portfolio_edit_form", clear_on_submit=False):
+                    edited_df = st.data_editor(
+                        pd.DataFrame(edit_list), 
+                        use_container_width=True, 
+                        hide_index=True,
+                        key="portfolio_editor_v98"
+                    )
+                    
+                    if st.form_submit_button("✅ 編集内容を保存", type="primary", use_container_width=True):
+                        try:
+                            new_configs = {row['コード']: {"buy_price": float(row['購入単価']), "shares": int(row['保有株数'])} for _, row in edited_df.iterrows()}
+                            st.session_state.stock_configs = new_configs
+                            save_data(new_configs)
+                            st.success("✅ ポートフォリオを更新しました！")
+                            st.rerun()
+                        except Exception as ex:
+                            st.error(f"❌ 保存中にエラーが発生しました: {ex}")
             else:
                 st.warning("📭 銘柄が登録されていません。サイドバーから銘柄を追加してください。")
         else:
