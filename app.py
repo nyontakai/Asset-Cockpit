@@ -191,27 +191,35 @@ def fetch_bulk_data(ticker_list):
     for i in range(0, len(ticker_list), CHUNK_SIZE):
         chunk = ticker_list[i:i + CHUNK_SIZE]
         try:
-            # group_by='ticker' を維持しつつ、1銘柄でも同じ構造で扱えるように調整
-            df = yf.download(chunk, period="5d", interval="1d", group_by='ticker', progress=False, threads=True)
+            # threads=False の方が安定する場合がある（特に単発の際）
+            df = yf.download(chunk, period="5d", interval="1d", group_by='ticker', progress=False)
+            
+            # yfinanceの返り値がMultiIndex（複数列）か単一列かを判定
+            is_mi = isinstance(df.columns, pd.MultiIndex)
             
             for tid in chunk:
                 try:
-                    # 1銘柄のとき yf.download は MultiIndex を返さないことがあるため、柔軟に取得
-                    if len(chunk) == 1:
-                        ticker_df = df
+                    # 銘柄ごとにデータを抽出
+                    if is_mi:
+                        # MultiIndexの場合 (複数銘柄、または特定の条件下での1銘柄)
+                        if tid in df.columns.get_level_values(0):
+                            ticker_df = df[tid].dropna(subset=['Close'])
+                        else:
+                            continue
                     else:
-                        ticker_df = df[tid]
+                        # 1銘柄でMultiIndexでない場合
+                        ticker_df = df.dropna(subset=['Close'])
                     
-                    ticker_df = ticker_df.dropna(subset=['Close'])
                     if ticker_df.empty: continue
                     
                     current_price = ticker_df['Close'].iloc[-1]
-                    if len(ticker_df) > 1:
+                    # 5日分とってあるので、直近2営業日分あれば前日比が出せる
+                    if len(ticker_df) >= 2:
                         prev_close = ticker_df['Close'].iloc[-2]
                     else:
-                        # データが1日分しかない場合は Open を前日終値代わりにする
+                        # 1日分のみなら Open を暫定の前日比ベースにする
                         prev_close = ticker_df['Open'].iloc[-1] if 'Open' in ticker_df.columns else current_price
-                    
+
                     results[tid] = {
                         "price": float(current_price),
                         "prev_close": float(prev_close),
