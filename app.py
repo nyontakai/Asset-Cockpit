@@ -5,6 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import json
 import os
+import re
 from datetime import datetime
 
 # ------------------------------------------------------------------------------
@@ -47,7 +48,7 @@ COLOR_DANGER = "#ff4b4b"
 COLOR_PRIMARY = "#00d4ff"
 
 st.set_page_config(
-    page_title="👑 マイ株価ダッシュボード Pro v9.2",
+    page_title="マイ株価ダッシュボード Pro v9.2",
     page_icon="👑",
     layout="wide"
 )
@@ -159,7 +160,7 @@ def load_data():
                 return json.load(f)
         except Exception:
             return {}
-    return {"4661.T": {"buy_price": 0.0, "shares": 100}}
+    return {}
 
 def save_data(data):
     try:
@@ -286,7 +287,6 @@ def get_display_name(tid, info):
     ]
     
     cleaned = raw_name
-    import re
     for r in removals:
         # 大文字小文字を区別せず、単語境界やピリオドを考慮して置換
         pattern = re.escape(r).replace(r"\.", r"\.?")
@@ -310,9 +310,6 @@ def main():
 
     # --- サイドバー ---
     st.sidebar.header("🛡️ 銘柄・表示管理")
-    
-    # 表示モード
-    display_mode = st.sidebar.radio("表示モード", ["カード形式", "リスト形式 (表)"], horizontal=True)
     
     st.sidebar.divider()
     
