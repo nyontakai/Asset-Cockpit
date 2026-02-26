@@ -15,17 +15,26 @@ SAVE_FILE = "stock_data_v5.json"
 METADATA_FILE = "metadata_db.json"
 
 NAME_MAPPING = {
-    # 代表的な銘柄のみを残し、ユーザー独自のリストを隠蔽して汎用性を高める
     "7203.T": "トヨタ自動車",
     "6758.T": "ソニーグループ",
     "9433.T": "KDDI",
     "8306.T": "三菱UFJフィナンシャルG",
+    "8316.T": "三井住友フィナンシャルG",
     "9984.T": "ソフトバンクグループ",
     "7974.T": "任天堂",
     "4661.T": "オリエンタルランド",
     "8058.T": "三菱商事",
     "8001.T": "伊藤忠商事",
     "9432.T": "日本電信電話",
+    "8593.T": "三菱HCキャピタル",
+    "8591.T": "オリックス",
+    "8766.T": "東京海上HD",
+    "2914.T": "日本たばこ産業",
+    "9101.T": "日本郵船",
+    "6098.T": "リクルートHD",
+    "4502.T": "武田薬品工業",
+    "6902.T": "デンソー",
+    "4063.T": "信越化学工業",
 }
 
 SECTOR_MAPPING = {
@@ -48,7 +57,7 @@ COLOR_DANGER = "#ff4b4b"
 COLOR_PRIMARY = "#00d4ff"
 
 st.set_page_config(
-    page_title="マイ株価ダッシュボード Pro v9.2",
+    page_title="マイ株価ダッシュボード Pro v10.1",
     page_icon="👑",
     layout="wide"
 )
@@ -182,22 +191,37 @@ def fetch_bulk_data(ticker_list):
     for i in range(0, len(ticker_list), CHUNK_SIZE):
         chunk = ticker_list[i:i + CHUNK_SIZE]
         try:
-            df = yf.download(chunk, period="5d", interval="1d", group_by='ticker', progress=False)
+            # group_by='ticker' を維持しつつ、1銘柄でも同じ構造で扱えるように調整
+            df = yf.download(chunk, period="5d", interval="1d", group_by='ticker', progress=False, threads=True)
+            
             for tid in chunk:
                 try:
-                    ticker_df = df if len(chunk) == 1 else df[tid]
+                    # 1銘柄のとき yf.download は MultiIndex を返さないことがあるため、柔軟に取得
+                    if len(chunk) == 1:
+                        ticker_df = df
+                    else:
+                        ticker_df = df[tid]
+                    
                     ticker_df = ticker_df.dropna(subset=['Close'])
                     if ticker_df.empty: continue
+                    
                     current_price = ticker_df['Close'].iloc[-1]
-                    prev_close = ticker_df['Close'].iloc[-2]
+                    if len(ticker_df) > 1:
+                        prev_close = ticker_df['Close'].iloc[-2]
+                    else:
+                        # データが1日分しかない場合は Open を前日終値代わりにする
+                        prev_close = ticker_df['Open'].iloc[-1] if 'Open' in ticker_df.columns else current_price
+                    
                     results[tid] = {
                         "price": float(current_price),
                         "prev_close": float(prev_close),
                         "change_abs": float(current_price - prev_close),
-                        "change_pct": float((current_price - prev_close) / prev_close * 100)
+                        "change_pct": float((current_price - prev_close) / prev_close * 100) if prev_close != 0 else 0
                     }
-                except Exception: results[tid] = None
-        except Exception: continue
+                except Exception:
+                    results[tid] = None
+        except Exception:
+            continue
     return results
 
 def load_metadata_db():
@@ -273,9 +297,9 @@ def get_display_name(tid, info):
     # 1. ユーザー定義リスト (NAME_MAPPING) をチェック
     if tid in NAME_MAPPING: return NAME_MAPPING[tid]
     
-    # 2. yfinance の info から名称を取得 (日本語名、なければ英語名)
-    # yfinance の info には 'longName' や 'shortName' が含まれる
-    raw_name = info.get("longName") or info.get("shortName") or tid
+    # 2. yfinance の info から名称を取得 (日本語フィールドを優先)
+    # 日本株の場合、yf.Ticker.info 内に 'longName' が日本語で入っていることが多い
+    raw_name = info.get("longName") or info.get("shortName") or info.get("symbol") or tid
     
     # 3. 英語名称から不要なキーワードを徹底除去（汎用性アップ）
     removals = [
@@ -451,7 +475,7 @@ def main():
             })
 
         # --- トップセクション (2カラム) ---
-        if total_valuation > 0:
+        if all_data: # total_valuation > 0 だと単価0の銘柄のみの場合に表示されないため、銘柄があれば表示
             col_metrics, col_pie = st.columns([1, 1])
             with col_metrics:
                 pl_class = "metric-positive" if total_pl >= 0 else "metric-negative"
