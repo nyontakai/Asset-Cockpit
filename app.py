@@ -384,12 +384,21 @@ def main():
         st.download_button("📤 保存(JSON)", json.dumps(st.session_state.stock_configs, indent=4, ensure_ascii=False), 
                          file_name="portfolio.json", use_container_width=True)
     with c2:
-        # ラベルを日本語化
         up = st.file_uploader("設定読込", type="json", label_visibility="collapsed")
         if up:
-            st.session_state.stock_configs = json.load(up)
-            save_data(st.session_state.stock_configs)
-            st.rerun()
+            try:
+                st.session_state.stock_configs = json.load(up)
+                save_data(st.session_state.stock_configs)
+                st.rerun()
+            except Exception as e:
+                st.error(f"読込エラー: {e}")
+
+    # ⚠️ データの初期化 (配布・公開用)
+    if st.sidebar.button("🗑️ データを全削除して初期化", use_container_width=True):
+        st.session_state.stock_configs = {}
+        save_data({})
+        st.success("全ての銘柄を削除しました。")
+        st.rerun()
 
     st.sidebar.divider()
     
