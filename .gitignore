@@ -1,0 +1,19 @@
+# Streamlit
+.streamlit/
+static/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+ENV/
+
+# Stock Dashboard Data (Privacy)
+stock_data_v5.json
+portfolio.json
+metadata_db.json
+purchase_prices.json
+*.json
