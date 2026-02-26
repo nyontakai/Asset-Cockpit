@@ -300,6 +300,25 @@ def get_display_name(tid, info):
     return cleaned if cleaned else tid
 
 # ------------------------------------------------------------------------------
+# コールバック関数
+# ------------------------------------------------------------------------------
+def add_ticker_callback():
+    code = st.session_state.get("new_ticker_input", "")
+    if code.isdigit() and len(code) == 4:
+        full_code = f"{code}.T"
+        if full_code not in st.session_state.stock_configs:
+            st.session_state.stock_configs[full_code] = {"buy_price": 0.0, "shares": 100}
+            save_data(st.session_state.stock_configs)
+            st.session_state["new_ticker_input"] = "" # 入力欄をクリア
+            # rerunはコールバック終了後に自動で行われる
+
+def save_portfolio_callback():
+    # portfolio_editor_v99 は st.data_editor の key に対応
+    # st.session_state["portfolio_editor_v99"] には編集内容が入っている
+    # ただし、今回は edited_df を直接使うか、stateから復元する
+    pass # 実際の処理は main 内のボタンで行うか、ここに移譲
+
+# ------------------------------------------------------------------------------
 # メイン画面
 # ------------------------------------------------------------------------------
 def main():
@@ -313,26 +332,18 @@ def main():
     
     st.sidebar.divider()
     
-    # 銘柄追加 & プレビュー
+    # 銘柄追加
     with st.sidebar.expander("➕ 銘柄を追加", expanded=True):
-        new_code = st.text_input("証券コード (4桁)", max_chars=4, key="ticker_input")
-        if new_code.isdigit() and len(new_code) == 4:
-            preview_tid = f"{new_code}.T"
-            # プレビュー用の簡易取得
-            p_info = yf.Ticker(preview_tid).info
-            p_name = get_display_name(preview_tid, p_info)
-            if p_info:
-                st.caption(f"🔍 プレビュー: **{p_name}**")
-            else:
-                st.caption("⚠️ 該当する銘柄が見つかりません")
-        
-        if st.button("追加実行", use_container_width=True):
-            if new_code.isdigit() and len(new_code) == 4:
-                full_code = f"{new_code}.T"
-                if full_code not in st.session_state.stock_configs:
-                    st.session_state.stock_configs[full_code] = {"buy_price": 0.0, "shares": 100}
-                    save_data(st.session_state.stock_configs)
-                    st.rerun()
+        st.text_input("証券コード (4桁)", max_chars=4, key="new_ticker_input")
+        if st.button("追加実行", use_container_width=True, on_click=add_ticker_callback):
+            pass # ロジックはコールバックへ
+
+    # ポートフォリオ一括削除（簡易版）
+    if st.sidebar.button("🗑️ 全データを初期化", use_container_width=True):
+        if st.sidebar.checkbox("本当に全て削除しますか？"):
+            st.session_state.stock_configs = {}
+            save_data({})
+            st.rerun()
 
     # JSON保存・読込
     st.sidebar.subheader("💾 設定の保存・読込")
@@ -502,24 +513,28 @@ def main():
                 })
             
             if edit_list:
-                # フォームを使用して保存ボタンの動作を確実にする
-                with st.form("portfolio_edit_form", clear_on_submit=False):
-                    edited_df = st.data_editor(
-                        pd.DataFrame(edit_list), 
-                        use_container_width=True, 
-                        hide_index=True,
-                        key="portfolio_editor_v98"
-                    )
+                # フォームを使わずに直接表示（よりレスポンスが良い）
+                edited_df = st.data_editor(
+                    pd.DataFrame(edit_list), 
+                    use_container_width=True, 
+                    hide_index=True,
+                    key="portfolio_editor_v99"
+                )
+                
+                # 保存ボタンを単独で配置
+                if st.button("💾 編集内容を保存して更新", type="primary", use_container_width=True):
+                    success = False
+                    try:
+                        new_configs = {row['コード']: {"buy_price": float(row['購入単価']), "shares": int(row['保有株数'])} for _, row in edited_df.iterrows()}
+                        st.session_state.stock_configs = new_configs
+                        save_data(new_configs)
+                        success = True
+                    except Exception as ex:
+                        st.error(f"❌ 保存中にエラーが発生しました: {ex}")
                     
-                    if st.form_submit_button("✅ 編集内容を保存", type="primary", use_container_width=True):
-                        try:
-                            new_configs = {row['コード']: {"buy_price": float(row['購入単価']), "shares": int(row['保有株数'])} for _, row in edited_df.iterrows()}
-                            st.session_state.stock_configs = new_configs
-                            save_data(new_configs)
-                            st.success("✅ ポートフォリオを更新しました！")
-                            st.rerun()
-                        except Exception as ex:
-                            st.error(f"❌ 保存中にエラーが発生しました: {ex}")
+                    if success:
+                        st.success("✅ 保存に成功しました！最新の株価で再計算します...")
+                        st.rerun()
             else:
                 st.warning("📭 銘柄が登録されていません。サイドバーから銘柄を追加してください。")
         else:
@@ -531,11 +546,12 @@ def main():
                 sector_data[s].append(d)
             
             for sector, items in sector_data.items():
-                with st.expander(f"📌 {sector} ({len(items)}銘柄)", expanded=True):
+                items_list = list(items) # リストであることを保証
+                with st.expander(f"📌 {sector} ({len(items_list)}銘柄)", expanded=True):
                     cols_count = 3
-                    for i in range(0, len(items), cols_count):
+                    for i in range(0, len(items_list), cols_count):
                         cols = st.columns(cols_count)
-                        row_items = items[i : i + cols_count]
+                        row_items = items_list[i : i + cols_count]
                         for j, item in enumerate(row_items):
                             with cols[j]:
                                 st.markdown(f"**{item['銘柄名']}** ({item['コード']})")
