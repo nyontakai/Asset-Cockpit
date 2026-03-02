@@ -96,7 +96,7 @@ COLOR_DANGER = "#ff4b4b"
 COLOR_PRIMARY = "#00d4ff"
 
 st.set_page_config(
-    page_title="マイ株価ダッシュボード Pro v10.1",
+    page_title="マイ株価ダッシュボード Pro v14.1",
     page_icon="👑",
     layout="wide"
 )
@@ -387,20 +387,13 @@ def get_display_name(tid, info, custom_name=None):
 # ------------------------------------------------------------------------------
 def add_ticker_callback():
     code = st.session_state.get("new_ticker_input", "")
-    user_id = st.session_state.get("user_passcode", "")
+    user_id = st.session_state.get("current_user", "")
     if code.isdigit() and len(code) == 4:
         full_code = f"{code}.T"
         if full_code not in st.session_state.stock_configs:
             st.session_state.stock_configs[full_code] = {"buy_price": 0.0, "shares": 100}
             save_data(st.session_state.stock_configs, user_id)
-            st.session_state["new_ticker_input"] = "" # 入力欄をクリア
-            # rerunはコールバック終了後に自動で行われる
-
-def save_portfolio_callback():
-    # portfolio_editor_v99 は st.data_editor の key に対応
-    # st.session_state["portfolio_editor_v99"] には編集内容が入っている
-    # ただし、今回は edited_df を直接使うか、stateから復元する
-    pass # 実際の処理は main 内のボタンで行うか、ここに移譲
+            st.session_state["new_ticker_input"] = ""
 
 # ------------------------------------------------------------------------------
 # メイン画面
@@ -433,7 +426,7 @@ def main():
                     else:
                         st.error("ユーザー名またはパスワードが正しくありません。")
             
-            st.info("💡 お気に入り登録した専用URLがある場合は、開くだけでIDが入力されます。")
+            st.info("💡 登録済みの場合は、ログイン後にあなたの専用ダッシュボードが表示されます。")
 
         with tab_reg:
             with st.form("reg_form"):
