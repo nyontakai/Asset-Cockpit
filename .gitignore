@@ -12,8 +12,6 @@ venv/
 ENV/
 
 # Stock Dashboard Data (Privacy)
-stock_data_v5.json
 portfolio.json
-metadata_db.json
 purchase_prices.json
 *.json
