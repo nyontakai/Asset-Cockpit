@@ -6,18 +6,37 @@ import plotly.graph_objects as go
 import json
 import os
 import re
+import hashlib
 from datetime import datetime
 
 # ------------------------------------------------------------------------------
 # 設定 & マッピング
 # ------------------------------------------------------------------------------
-SAVE_FILE_BASE = "stock_dashboard_user" # ベース名のみ。後ろにIDをつける
+SAVE_FILE_BASE = "stock_dashboard_user"
 METADATA_FILE = "metadata_db_cache.json"
+USERS_FILE = "users_db.json"
 
-# 🛡️ 秘密の「マスターキー（合言葉）」
-# 配布する際はここを自分の好きな言葉に変えてください。
-# これを知らない人は、URL（ID）が合っていてもデータを見ることができません。
-MASTER_SECURITY_KEY = "7777" 
+# 🛡️ 会員登録用の「招待コード」
+# 販売・配布する際はここを自分の好きな言葉に変えてください。
+INVITATION_CODE = "OPEN2026"
+
+def hash_password(password):
+    """パスワードを安全にハッシュ化します"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def load_users():
+    if os.path.exists(USERS_FILE):
+        try:
+            with open(USERS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception: return {}
+    return {}
+
+def save_users(users):
+    try:
+        with open(USERS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(users, f, indent=4)
+    except Exception: pass
 
 def get_save_filename(user_id):
     """ユーザーIDに基づいたファイル名を生成"""
@@ -47,6 +66,14 @@ NAME_MAPPING = {
     "4502.T": "武田薬品工業",
     "6902.T": "デンソー",
     "4063.T": "信越化学工業",
+    "5334.T": "日本特殊陶業",
+    "9104.T": "商船三井",
+    "9107.T": "川崎汽船",
+    "2502.T": "アサヒGHD",
+    "2503.T": "キリンHD",
+    "7267.T": "本田技研工業",
+    "6501.T": "日立製作所",
+    "6981.T": "村田製作所",
 }
 
 SECTOR_MAPPING = {
@@ -274,7 +301,12 @@ def get_bulk_metadata(ticker_list):
                 chunk_count = 0
                 for tid in missing:
                     try:
-                        info = yf.Ticker(tid).info
+                        t = yf.Ticker(tid)
+                        info = t.info
+                        # infoが空または名前がない場合、fast_info等で再試行
+                        if not info or not info.get("longName"):
+                            info = t.info # yfinanceのキャッシュの関係で2回目で取れることがある
+                        
                         st.session_state.metadata_cache[tid] = info
                         chunk_count += 1
                         if chunk_count % 10 == 0:
@@ -317,7 +349,10 @@ def fetch_dividend_history(tid):
         if ".T" in tid: return [6, 12]
         return []
 
-def get_display_name(tid, info):
+def get_display_name(tid, info, custom_name=None):
+    # 0. ユーザーが手動で設定した名称があれば最優先
+    if custom_name: return custom_name
+
     # 1. ユーザー定義リスト (NAME_MAPPING) をチェック
     if tid in NAME_MAPPING: return NAME_MAPPING[tid]
     
@@ -373,77 +408,83 @@ def save_portfolio_callback():
 def main():
     st.title("👑 マイ株価ダッシュボード Pro")
 
-    # --- URLパラメータからのID・キー取得 ---
-    query_params = st.query_params
-    url_id = query_params.get("id", "")
-    url_key = query_params.get("key", "") # 秘密の鍵もURLから取得可能に
+    # --- 認証セッション管理 ---
+    if 'logged_in' not in st.session_state:
+        st.session_state.logged_in = False
+    if 'current_user' not in st.session_state:
+        st.session_state.current_user = None
 
-    if 'user_passcode' not in st.session_state:
-        st.session_state.user_passcode = url_id
-    if 'user_key' not in st.session_state:
-        st.session_state.user_key = url_key
+    # --- ログイン・登録画面 ---
+    if not st.session_state.logged_in:
+        url_user = st.query_params.get("user", "")
+        tab_login, tab_reg = st.tabs(["🔑 ログイン", "📝 新規登録"])
+        
+        with tab_login:
+            with st.form("login_form"):
+                u = st.text_input("ユーザー名", value=url_user)
+                p = st.text_input("パスワード", type="password")
+                if st.form_submit_button("ログイン", use_container_width=True):
+                    users = load_users()
+                    if u in users and users[u] == hash_password(p):
+                        st.session_state.logged_in = True
+                        st.session_state.current_user = u
+                        st.success(f"ようこそ、{u}さん！")
+                        st.rerun()
+                    else:
+                        st.error("ユーザー名またはパスワードが正しくありません。")
+            
+            st.info("💡 お気に入り登録した専用URLがある場合は、開くだけでIDが入力されます。")
 
-    # 認証チェック: IDがあり、かつキーがマスターキーと一致する場合のみロード許可
-    is_authenticated = (st.session_state.user_passcode != "" and 
-                        st.session_state.user_key == MASTER_SECURITY_KEY)
+        with tab_reg:
+            with st.form("reg_form"):
+                new_u = st.text_input("希望するユーザー名")
+                new_p = st.text_input("パスワード", type="password")
+                inv_code = st.text_input("招待コード（管理者から共有されたもの）")
+                if st.form_submit_button("アカウント作成", use_container_width=True):
+                    users = load_users()
+                    if not new_u or not new_p:
+                        st.error("入力が不足しています。")
+                    elif new_u in users:
+                        st.error("そのユーザー名は既に使用されています。")
+                    elif inv_code != INVITATION_CODE:
+                        st.error("招待コードが正しくありません。")
+                    else:
+                        users[new_u] = hash_password(new_p)
+                        save_users(users)
+                        st.success("会員登録が完了しました！ログインタブからログインしてください。")
+        
+        st.stop() # ログインするまで下は見せない
+
+    # --- ログイン済み状態 ---
+    current_user = st.session_state.current_user
 
     if 'stock_configs' not in st.session_state:
-        if is_authenticated:
-            st.session_state.stock_configs = load_data(st.session_state.user_passcode)
-        else:
-            st.session_state.stock_configs = {}
+        st.session_state.stock_configs = load_data(current_user)
 
     # --- サイドバー (設定・管理) ---
-    st.sidebar.header("🔐 二段階認証セッション")
+    st.sidebar.header(f"👤 {current_user} 様")
     
-    # 1. マイ・パスコード入力 (伏せ字)
-    new_id = st.sidebar.text_input("① マイ・パスコード (ID)", value=st.session_state.user_passcode, 
-                                 type="password",
-                                 help="自分専用のIDを入力してください。",
-                                 placeholder="例: my_secret_123")
-    
-    # 2. マスターキー入力 (伏せ字)
-    new_key = st.sidebar.text_input("② マスターキー (合言葉)", value=st.session_state.user_key, 
-                                  type="password",
-                                  help="プログラムに設定された秘密の言葉を入力してください。",
-                                  placeholder="例: ****")
-
-    # 入力に変更があった場合の処理
-    if new_id != st.session_state.user_passcode or new_key != st.session_state.user_key:
-        st.session_state.user_passcode = new_id
-        st.session_state.user_key = new_key
-        
-        # 再認証してロード
-        if new_id != "" and new_key == MASTER_SECURITY_KEY:
-            st.session_state.stock_configs = load_data(new_id)
-        else:
-            st.session_state.stock_configs = {}
-            
-        # URLパラメータを更新
-        st.query_params["id"] = new_id
-        st.query_params["key"] = new_key
+    if st.sidebar.button("🚪 ログアウト", use_container_width=True):
+        st.session_state.logged_in = False
+        st.session_state.current_user = None
+        st.session_state.stock_configs = {}
         st.rerun()
 
-    if is_authenticated:
-        st.sidebar.success(f"🔓 認証成功 (ID: {st.session_state.user_passcode})")
-        # お気に入りURLの案内 (キーも含める)
-        base_url = "https://asset-cockpit.streamlit.app/" 
-        share_url = f"{base_url}?id={st.session_state.user_passcode}&key={st.session_state.user_key}"
-        st.sidebar.caption("💡 このURLをお気に入り登録すれば、次から自動で開きます：")
-        st.sidebar.code(share_url, language="text")
-    elif st.session_state.user_passcode != "":
-        st.sidebar.error("❌ マスターキーが正しくありません")
-    else:
-        st.sidebar.info("👋 IDとキーを入力して、自分専用のダッシュボードを開始してください。")
+    st.sidebar.divider()
+    
+    # URLパラメータの同期（お気に入り用の案内）
+    base_url = "https://asset-cockpit.streamlit.app/" 
+    share_url = f"{base_url}?user={current_user}"
+    st.sidebar.caption("💡 このURLをブックマークしておくと便利です：")
+    st.sidebar.code(share_url, language="text")
 
     st.sidebar.divider()
     
     # 銘柄追加
     with st.sidebar.expander("➕ 銘柄を追加", expanded=True):
         st.text_input("証券コード (4桁)", max_chars=4, key="new_ticker_input")
-        disabled = not st.session_state.user_passcode
-        if st.button("追加実行", use_container_width=True, on_click=add_ticker_callback, disabled=disabled):
-            if disabled: st.error("パスコードを入力してください")
+        if st.button("追加実行", use_container_width=True, on_click=add_ticker_callback):
+            pass
 
     # 設定の書き出し・読み込み
     st.sidebar.subheader("💾 設定の保存・読込")
@@ -456,7 +497,7 @@ def main():
         if up:
             try:
                 st.session_state.stock_configs = json.load(up)
-                save_data(st.session_state.stock_configs, st.session_state.user_passcode)
+                save_data(st.session_state.stock_configs, st.session_state.current_user)
                 st.rerun()
             except Exception as e:
                 st.error(f"読込エラー: {e}")
@@ -464,7 +505,7 @@ def main():
     # ⚠️ データの初期化 (配布・公開用)
     if st.sidebar.button("🗑️ データを全削除して0件にする", use_container_width=True):
         st.session_state.stock_configs = {}
-        save_data({}, st.session_state.user_passcode)
+        save_data({}, st.session_state.current_user)
         st.success("全ての銘柄を削除しました。")
         st.rerun()
 
@@ -481,11 +522,16 @@ def main():
     if current_tickers:
         # 登録銘柄の表示名の取得もキャッシュを活用
         meta_all = get_bulk_metadata(current_tickers)
-        options = {f"{get_display_name(tid, meta_all.get(tid, {}))} ({tid})": tid for tid in current_tickers}
+        options = {}
+        for tid in current_tickers:
+            cfg = st.session_state.stock_configs.get(tid, {})
+            name = get_display_name(tid, meta_all.get(tid, {}), cfg.get("custom_name"))
+            options[f"{name} ({tid})"] = tid
+            
         sel = st.sidebar.multiselect("登録済み銘柄 (×で削除)", options.keys(), default=options.keys())
         if len(sel) < len(current_tickers):
             if st.sidebar.button("削除を確定", type="primary", use_container_width=True):
-                user_id = st.session_state.get("user_passcode", "")
+                user_id = st.session_state.current_user
                 st.session_state.stock_configs = {options[label]: st.session_state.stock_configs[options[label]] for label in sel}
                 save_data(st.session_state.stock_configs, user_id)
                 st.rerun()
@@ -501,7 +547,7 @@ def main():
     # --- データ計算 ---
     ticker_list = list(st.session_state.stock_configs.keys())
     if not ticker_list:
-        st.info("左側のサイドバーから証券コード（4桁）を入力して銘柄を追加してください。")
+        st.info("👋 まずはサイドバーから証券コード（4桁）を入力して、お好きな銘柄を追加してください。")
         st.stop()
 
     try:
@@ -520,10 +566,10 @@ def main():
             if not price_data: continue
             
             info = bulk_meta.get(tid, {})
-            cfg = st.session_state.stock_configs.get(tid, {"buy_price": 0.0, "shares": 100})
+            cfg = st.session_state.stock_configs.get(tid, {"buy_price": 0.0, "shares": 100, "custom_name": None})
             
             # 基本情報
-            name = get_display_name(tid, info)
+            name = get_display_name(tid, info, cfg.get("custom_name"))
             sec_raw = info.get("sector")
             sec = SECTOR_MAPPING.get(sec_raw, sec_raw or "その他業種")
             shares = cfg['shares']
@@ -614,10 +660,10 @@ def main():
             edit_list = []
             for tid in ticker_list:
                 info = bulk_meta.get(tid, {})
-                cfg = st.session_state.stock_configs.get(tid, {"buy_price": 0.0, "shares": 100})
+                cfg = st.session_state.stock_configs.get(tid, {"buy_price": 0.0, "shares": 100, "custom_name": None})
                 edit_list.append({
                     "コード": tid,
-                    "銘柄名": get_display_name(tid, info),
+                    "銘柄名": get_display_name(tid, info, cfg.get("custom_name")),
                     "保有株数": int(cfg['shares']),
                     "購入単価": float(cfg['buy_price'])
                 })
@@ -635,9 +681,15 @@ def main():
                 if st.button("💾 編集内容を保存して更新", type="primary", use_container_width=True):
                     success = False
                     try:
-                        new_configs = {row['コード']: {"buy_price": float(row['購入単価']), "shares": int(row['保有株数'])} for _, row in edited_df.iterrows()}
+                        new_configs = {
+                            row['コード']: {
+                                "buy_price": float(row['購入単価']), 
+                                "shares": int(row['保有株数']),
+                                "custom_name": str(row['銘柄名'])
+                            } for _, row in edited_df.iterrows()
+                        }
                         st.session_state.stock_configs = new_configs
-                        user_id = st.session_state.get("user_passcode", "")
+                        user_id = st.session_state.current_user
                         save_data(new_configs, user_id)
                         success = True
                     except Exception as ex:
